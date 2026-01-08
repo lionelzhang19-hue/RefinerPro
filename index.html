@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Story Refiner Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "marked": "https://esm.sh/marked",
+        "dompurify": "https://esm.sh/dompurify",
+        "jspdf": "https://esm.sh/jspdf",
+        "swiper": "https://esm.sh/swiper@11",
+        "framer-motion": "https://esm.sh/framer-motion"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Merriweather:wght@300;400;700&family=Fira+Code:wght@300;400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --accent: #6366f1;
+            --sidebar-width: 300px;
+        }
+
+        .dark {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f1f5f9;
+            --accent: #818cf8;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            transition: background-color 0.3s ease, color 0.3s ease;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        .font-serif { font-family: 'Merriweather', serif; }
+        .font-mono { font-family: 'Fira Code', monospace; }
+        .font-fancy { font-family: 'Playfair Display', serif; }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .dark .glass {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #sidebar {
+            width: var(--sidebar-width);
+            transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 50;
+        }
+
+        #sidebar.open {
+            transform: translateX(0);
+        }
+
+        .loader-orb {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(45deg, var(--accent), #ec4899);
+            border-radius: 50%;
+            filter: blur(15px);
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+            100% { transform: scale(0.8); opacity: 0.5; }
+        }
+
+        .card-enter {
+            opacity: 0;
+            transform: translateY(20px);
+            animation: slideUp 0.5s forwards ease-out;
+        }
+
+        @keyframes slideUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .high-contrast {
+            --bg-color: #000000;
+            --card-bg: #000000;
+            --text-main: #ffffff;
+            --accent: #ffff00;
+        }
+
+        .high-contrast * {
+            border-color: #ffffff !important;
+        }
+
+        #text-settings-group.locked #text-settings-dropdown,
+        #ai-settings-group.locked #ai-settings-dropdown {
+            display: block !important;
+        }
+
+        /* Mobile specific adjustments */
+        @media (max-width: 768px) {
+            :root { --sidebar-width: 85vw; }
+            .main-content { padding-bottom: 80px; }
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- Daily Inspiration -->
+    <div id="inspiration-banner" class="glass sticky top-0 z-40 px-4 py-2 text-center text-sm font-medium border-b border-white/10 flex justify-between items-center">
+        <span class="flex-1" id="inspiration-text">Loading inspiration...</span>
+        <button id="refresh-inspiration" class="p-1 hover:bg-black/5 rounded" aria-label="Refresh inspiration">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+    </div>
+
+    <!-- Sidebar Overlay -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 hidden z-40 transition-opacity"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full glass shadow-2xl flex flex-col">
+        <div class="p-6 flex justify-between items-center border-b border-white/10">
+            <h2 class="text-xl font-bold">Story Archives</h2>
+            <button id="close-sidebar" class="p-2 lg:hidden">&times;</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-6">
+            <section>
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2">
+                    <img src="favorite_star.png" class="w-4 h-4" alt="Favorites"> Favorites
+                </h3>
+                <div id="favorites-list" class="space-y-2 text-sm">
+                    <p class="text-gray-400 italic">No favorites yet.</p>
+                </div>
+            </section>
+            <section>
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2">
+                    <img src="history_icon.png" class="w-4 h-4" alt="History"> Recent History
+                </h3>
+                <div id="history-list" class="space-y-2 text-sm">
+                    <p class="text-gray-400 italic">History is empty.</p>
+                </div>
+            </section>
+        </div>
+        <div class="p-4 border-t border-white/10">
+            <button id="clear-data" class="w-full py-2 px-4 text-xs bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded transition">Clear All Data</button>
+        </div>
+    </aside>
+
+    <!-- Main Navigation / Header -->
+    <header class="p-4 flex items-center justify-between glass sticky top-10 z-30 mx-4 mt-4 rounded-2xl shadow-sm">
+        <div class="flex items-center gap-4">
+            <button id="open-sidebar" class="p-2 hover:bg-white/10 rounded-lg" aria-label="Open History">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
+            <h1 class="text-xl font-bold hidden sm:block">Refiner<span class="text-indigo-500">Pro</span></h1>
+        </div>
+        
+        <div class="flex items-center gap-2">
+            <!-- Font Settings -->
+            <div class="relative group" id="text-settings-group">
+                <button id="text-settings-toggle" class="p-2 hover:bg-white/10 rounded-lg" title="Text Settings">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+                </button>
+                <div id="text-settings-dropdown" class="absolute right-0 top-full mt-2 hidden group-hover:block glass rounded-xl shadow-xl p-4 min-w-[200px]">
+                    <div class="space-y-4">
+                        <div>
+                            <p class="text-xs mb-2 opacity-70">Font Style</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button class="font-btn text-xs p-2 bg-black/5 rounded active font-sans" data-font="sans">Sans</button>
+                                <button class="font-btn text-xs p-2 bg-black/5 rounded font-serif" data-font="serif">Serif</button>
+                                <button class="font-btn text-xs p-2 bg-black/5 rounded font-mono" data-font="mono">Mono</button>
+                                <button class="font-btn text-xs p-2 bg-black/5 rounded font-fancy" data-font="fancy">Fancy</button>
+                            </div>
+                        </div>
+                        <div>
+                            <p class="text-xs mb-2 opacity-70">Text Size</p>
+                            <input type="range" id="text-size-slider" min="12" max="24" value="16" class="w-full">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Accessibility -->
+            <button id="toggle-contrast" class="p-2 hover:bg-white/10 rounded-lg" title="High Contrast Mode">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 1 0 0-12v12z"/></svg>
+            </button>
+
+            <!-- AI Configuration -->
+            <div class="relative group" id="ai-settings-group">
+                <button id="ai-settings-toggle" class="p-2 hover:bg-white/10 rounded-lg" title="AI Configuration">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+                <div id="ai-settings-dropdown" class="absolute right-0 top-full mt-2 hidden group-hover:block glass rounded-xl shadow-xl p-4 min-w-[240px]">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="text-[10px] uppercase font-bold tracking-wider mb-1 block opacity-50">AI Model</label>
+                            <select id="model-select" class="w-full p-2 bg-black/10 rounded text-sm outline-none">
+                                <option value="gpt-4o">GPT-4o (Default)</option>
+                                <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet</option>
+                                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase font-bold tracking-wider mb-1 block opacity-50">API Key (Required)</label>
+                            <input type="password" id="api-key-input" placeholder="Enter your key..." class="w-full p-2 bg-black/10 rounded text-sm outline-none">
+                            <p class="text-[9px] mt-1 opacity-50">
+                                Get your key at <a href="https://pollinations.ai" target="_blank" class="text-indigo-400 underline">pollinations.ai</a>.
+                                Required for refinement.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Toggle -->
+            <button id="toggle-dark" class="p-2 hover:bg-white/10 rounded-lg" title="Toggle Theme">
+                <svg id="theme-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 py-8 main-content">
+        <!-- Input Section -->
+        <section class="mb-12">
+            <div class="flex flex-col md:flex-row gap-4 mb-4">
+                <div class="flex-1">
+                    <label for="story-input" class="block text-sm font-semibold mb-2 opacity-80">Your Story Seed</label>
+                    <textarea id="story-input" 
+                              class="w-full h-32 p-4 rounded-2xl glass focus:ring-2 ring-indigo-500 outline-none resize-none transition"
+                              placeholder="Describe your story idea here... (e.g., A detective who can talk to ghosts)"></textarea>
+                </div>
+                <div class="w-full md:w-48 space-y-4">
+                    <div>
+                        <label for="genre-select" class="block text-sm font-semibold mb-2 opacity-80">Genre</label>
+                        <select id="genre-select" class="w-full p-3 rounded-xl glass outline-none">
+                            <option value="General">General</option>
+                            <option value="Fantasy">Fantasy</option>
+                            <option value="Sci-Fi">Sci-Fi</option>
+                            <option value="Mystery">Mystery</option>
+                            <option value="Horror">Horror</option>
+                            <option value="Romance">Romance</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="lang-select" class="block text-sm font-semibold mb-2 opacity-80">Language</label>
+                        <select id="lang-select" class="w-full p-3 rounded-xl glass outline-none">
+                            <option value="English">English</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="French">French</option>
+                            <option value="German">German</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex items-center justify-between">
+                <span class="text-xs opacity-50">Press Enter to Refine • Esc to Clear</span>
+                <button id="refine-btn" class="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/30 transform transition hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100">
+                    Refine My Idea
+                </button>
+            </div>
+        </section>
+
+        <!-- Loading State -->
+        <div id="loading-state" class="hidden flex-col items-center justify-center py-20 space-y-4">
+            <div class="loader-orb"></div>
+            <p class="text-lg font-medium animate-pulse">Whispering to the Muse...</p>
+        </div>
+
+        <!-- Results Area -->
+        <div id="results-area" class="hidden space-y-8 pb-20">
+            <!-- Tagline Carousel -->
+            <section class="card-enter">
+                <h3 class="text-lg font-bold mb-4 px-2">Alternative Taglines</h3>
+                <div class="swiper tagline-swiper">
+                    <div class="swiper-wrapper" id="tagline-container">
+                        <!-- Taglines injected here -->
+                    </div>
+                    <div class="swiper-pagination"></div>
+                </div>
+            </section>
+
+            <!-- Plot Expansion -->
+            <section class="card-enter glass rounded-3xl p-6 shadow-xl relative group">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="text-xl font-bold">The Narrative Arc</h3>
+                    <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button class="copy-btn p-2 hover:bg-black/5 rounded-lg" data-target="plot-content" title="Copy Content">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                        <button class="fav-btn p-2 hover:bg-black/5 rounded-lg" title="Save to Favorites">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="plot-content" class="prose dark:prose-invert max-w-none mb-4"></div>
+                <div class="flex justify-between items-center text-xs opacity-50 pt-4 border-t border-white/10">
+                    <span id="plot-word-count">0 words</span>
+                    <div class="flex gap-4">
+                        <button class="share-twitter hover:text-sky-400">Twitter/X</button>
+                        <button class="share-reddit hover:text-orange-500">Reddit</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Characters & Worldbuilding -->
+            <div class="grid md:grid-cols-2 gap-8">
+                <section class="card-enter glass rounded-3xl p-6 shadow-xl relative group">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold">Protagonists</h3>
+                        <img id="char-image" src="character_placeholder.png" class="w-12 h-12 rounded-full border-2 border-indigo-500 shadow-md" alt="AI Character Render">
+                    </div>
+                    <div id="character-content" class="text-sm space-y-4"></div>
+                </section>
+
+                <section class="card-enter glass rounded-3xl p-6 shadow-xl relative group">
+                    <h3 class="text-xl font-bold mb-4">World Details</h3>
+                    <div id="world-content" class="text-sm space-y-4"></div>
+                </section>
+            </div>
+
+            <!-- Export Actions -->
+            <div class="flex flex-wrap gap-4 justify-center pt-8">
+                <button id="download-txt" class="flex items-center gap-2 px-6 py-3 glass hover:bg-indigo-500/10 rounded-xl transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    Export TXT
+                </button>
+                <button id="download-pdf" class="flex items-center gap-2 px-6 py-3 glass hover:bg-indigo-500/10 rounded-xl transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+                    Export PDF
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Feedback Button -->
+    <button id="open-feedback" class="fixed bottom-6 right-6 p-4 bg-indigo-600 text-white rounded-full shadow-2xl hover:scale-110 transition z-40" aria-label="Send Feedback">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </button>
+
+    <!-- Feedback Modal -->
+    <div id="feedback-modal" class="fixed inset-0 flex items-center justify-center p-4 bg-black/60 hidden z-50">
+        <div class="glass w-full max-w-md rounded-3xl p-8 shadow-2xl">
+            <h2 class="text-2xl font-bold mb-4">Send Feedback</h2>
+            <form id="feedback-form" class="space-y-4">
+                <input type="text" placeholder="Name" class="w-full p-3 rounded-xl glass outline-none" required>
+                <input type="email" placeholder="Email" class="w-full p-3 rounded-xl glass outline-none" required>
+                <textarea placeholder="Tell us what you think..." class="w-full h-32 p-3 rounded-xl glass outline-none resize-none" required></textarea>
+                <div class="flex gap-4">
+                    <button type="button" id="close-feedback" class="flex-1 py-3 bg-white/10 rounded-xl">Cancel</button>
+                    <button type="submit" class="flex-1 py-3 bg-indigo-600 text-white rounded-xl">Send</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
