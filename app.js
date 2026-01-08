@@ -2,6 +2,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { jsPDF } from 'jspdf';
 import Swiper from 'swiper';
+import { jsonrepair } from 'jsonrepair';
 
 // State Management
 const state = {
@@ -152,45 +153,53 @@ async function handleRefine() {
                     2. A compelling narrative arc (plot summary).
                     3. Detailed character profiles.
                     4. Worldbuilding notes.
-                    Output ONLY JSON in this format: 
+                    
+                    IMPORTANT: Output ONLY a valid JSON object. Ensure all strings are correctly escaped.
+                    JSON structure: 
                     {
                         "taglines": ["tagline 1", "tagline 2", "tagline 3"],
-                        "plot": "markdown plot",
-                        "characters": "markdown characters",
-                        "world": "markdown world",
-                        "summary": "short one sentence summary"
+                        "plot": "Detailed narrative arc in markdown format",
+                        "characters": "Detailed character profiles in markdown format",
+                        "world": "Detailed worldbuilding notes in markdown format",
+                        "summary": "A short one-sentence summary of the core concept"
                     }
                     Respond in ${lang}. Genre context: ${genre}.`;
 
         let data;
-        if (state.apiKey) {
-            const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${state.apiKey}`
-                },
-                body: JSON.stringify({
-                    model: state.model,
-                    messages: [
-                        { role: "system", content: systemPrompt },
-                        { role: "user", content: prompt }
-                    ],
-                    response_format: { type: "json_object" }
-                })
-            });
-            const result = await response.json();
-            data = JSON.parse(result.choices[0].message.content);
-        } else {
-            const response = await websim.chat.completions.create({
+        const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.apiKey}`
+            },
+            body: JSON.stringify({
                 model: state.model,
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: prompt }
                 ],
-                json: true
-            });
-            data = JSON.parse(response.content);
+                seed: Math.floor(Math.random() * 1000000)
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("API Error Response:", errorText);
+            throw new Error(`API Error: ${response.status} - ${errorText.substring(0, 100)}`);
+        }
+
+        const result = await response.json();
+        const content = result.choices[0].message.content;
+        
+        // Robust JSON parsing using jsonrepair to handle common LLM mistakes (like unescaped quotes or newlines)
+        try {
+            // Strip markdown code blocks if they exist before repairing
+            const stripped = content.replace(/```json\n?|```/g, '').trim();
+            const repaired = jsonrepair(stripped);
+            data = JSON.parse(repaired);
+        } catch (e) {
+            console.error("JSON Parse Error. Raw content:", content);
+            throw new Error(`The AI's response format was invalid: ${e.message}. Please try again.`);
         }
 
         state.currentRefinement = { ...data, original: prompt, id: Date.now() };
@@ -200,8 +209,8 @@ async function handleRefine() {
         generateCharacterImage(data.summary);
         
     } catch (err) {
-        console.error(err);
-        alert("Failed to refine idea. Please check your connection or API key.");
+        console.error("Refinement error details:", err);
+        alert(`Failed to refine idea: ${err.message || "Unknown error"}. Check console for details.`);
     } finally {
         els.refineBtn.disabled = false;
         els.loading.classList.add('hidden');
@@ -231,12 +240,25 @@ function updateModelsUI() {
     // Save current selection to see if it's still available
     const currentModel = state.model;
     
-    modelSelect.innerHTML = state.availableModels.map(m => {
-        // Handle both object and string formats if Pollinations returns varied data
+    let optionsHtml = '';
+    let foundCurrent = false;
+
+    state.availableModels.forEach(m => {
         const id = m.name || m.id || m;
         const name = m.description || m.id || m;
-        return `<option value="${id}" ${id === currentModel ? 'selected' : ''}>${name}</option>`;
-    }).join('');
+        const isSelected = id === currentModel;
+        if (isSelected) foundCurrent = true;
+        optionsHtml += `<option value="${id}" ${isSelected ? 'selected' : ''}>${name}</option>`;
+    });
+
+    modelSelect.innerHTML = optionsHtml;
+
+    // If the saved model isn't in the new list, update state to the first available model
+    if (!foundCurrent && state.availableModels.length > 0) {
+        const firstModel = state.availableModels[0].name || state.availableModels[0].id || state.availableModels[0];
+        state.model = firstModel;
+        localStorage.setItem('story_model', state.model);
+    }
 }
 
 function displayResults(data) {
